@@ -1,0 +1,119 @@
+LOCAL_PATH := $(call my-dir)
+
+#$(info $(LOCAL_PATH))
+
+USR_INCLUDES += $(LOCAL_PATH)/../include /opt/Eigen/include 
+#USR_CFLAGS   +=  
+USR_CPPFLAGS += -std=c++11 
+USR_CPPFLAGS += -DHAVE_PTHREADS 
+USR_CPPFLAGS += -mfpu=neon-vfpv4 -mfloat-abi=softfp
+#USR_CPPFLAGS += -D_SLOG_NO_INFO_ 
+#USR_LDFLAGS  += 
+USR_CPPFLAGS += -fexceptions
+
+#LOCAL_ARM_NEON := true
+
+#include $(CLEAR_VARS)    
+#LOCAL_MODULE = liblocal
+#LOCAL_SRC_FILES = ../clWrap.cpp
+#LOCAL_C_INCLUDES = $(USR_INCLUDES)    
+#LOCAL_CFLAGS = $(USR_CFLAGS)    
+#LOCAL_CPPFLAGS = $(USR_CPPFLAGS)    
+#LOCAL_LDFLAGS = $(USR_LDFLAGS)    
+#include $(BUILD_STATIC_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := GLES_mali
+#LOCAL_SRC_FILES := lib/libGLES_mali.so
+LOCAL_SRC_FILES := ../lib/libGLES_mali.so
+LOCAL_CFLAGS = $(USR_CFLAGS)    
+LOCAL_CPPFLAGS = $(USR_CPPFLAGS)    
+LOCAL_LDFLAGS = $(USR_LDFLAGS)    
+include $(PREBUILT_SHARED_LIBRARY)
+
+#include $(CLEAR_VARS)
+#LOCAL_MODULE := libopencv_core
+#LOCAL_SRC_FILES := lib/libopencv_core.a
+#include $(PREBUILT_STATIC_LIBRARY)
+
+#include $(CLEAR_VARS)
+#LOCAL_MODULE := libopencv_highgui
+#LOCAL_SRC_FILES := lib/libopencv_highgui.a
+#include $(PREBUILT_STATIC_LIBRARY)
+
+#include $(CLEAR_VARS)
+#LOCAL_MODULE := libopencv_imgproc
+#LOCAL_SRC_FILES := lib/libopencv_imgproc.a
+#include $(PREBUILT_STATIC_LIBRARY)
+
+#include $(CLEAR_VARS)
+#LOCAL_MODULE := libopencv_imgcodecs
+#LOCAL_SRC_FILES := lib/libopencv_imgcodecs.a
+#include $(PREBUILT_STATIC_LIBRARY)
+
+
+#include $(CLEAR_VARS)
+#LOCAL_MODULE := platformInfo
+#LOCAL_SRC_FILES += ../platformInfo.cpp 
+#LOCAL_C_INCLUDES = $(USR_INCLUDES)
+#LOCAL_CFLAGS = $(USR_CFLAGS)  
+#LOCAL_CPPFLAGS = $(USR_CPPFLAGS)    
+#LOCAL_LDFLAGS = $(USR_LDFLAGS)    
+#LOCAL_SHARED_LIBRARIES += GLES_mali
+#include $(BUILD_EXECUTABLE)
+
+
+#include $(CLEAR_VARS)
+#LOCAL_MODULE := EISD_distribute
+#LOCAL_SRC_FILES += ../EISD_distribute.cpp 
+#LOCAL_C_INCLUDES = $(USR_INCLUDES)
+#LOCAL_CFLAGS = $(USR_CFLAGS)  
+#LOCAL_CPPFLAGS = $(USR_CPPFLAGS)    
+#LOCAL_LDFLAGS = $(USR_LDFLAGS)    
+#LOCAL_SHARED_LIBRARIES += GLES_mali
+#include $(BUILD_EXECUTABLE)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := libeis
+LOCAL_SRC_FILES += ../eis.cpp 
+LOCAL_C_INCLUDES = $(USR_INCLUDES)
+LOCAL_CFLAGS = $(USR_CFLAGS)  
+LOCAL_CPPFLAGS = $(USR_CPPFLAGS)    
+LOCAL_LDFLAGS = $(USR_LDFLAGS)    
+LOCAL_SHARED_LIBRARIES += GLES_mali
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := main
+LOCAL_SRC_FILES += ../main.cpp 
+LOCAL_C_INCLUDES = $(USR_INCLUDES)
+LOCAL_CFLAGS = $(USR_CFLAGS) 
+LOCAL_CPPFLAGS = $(USR_CPPFLAGS)    
+LOCAL_LDFLAGS = $(USR_LDFLAGS)    
+#LOCAL_STATIC_LIBRARIES += libeis
+LOCAL_SHARED_LIBRARIES += libeis
+include $(BUILD_EXECUTABLE)
+
+
+#include $(CLEAR_VARS)
+#LOCAL_MODULE := eis
+#LOCAL_SRC_FILES += ../eis.cpp
+#LOCAL_C_INCLUDES = $(USR_INCLUDES)
+#LOCAL_CFLAGS = $(USR_CFLAGS)
+#LOCAL_CPPFLAGS = $(USR_CPPFLAGS)
+#LOCAL_LDFLAGS = $(USR_LDFLAGS)
+#LOCAL_STATIC_LIBRARIES += liblocal libopencv_core libopencv_highgui libopencv_imgproc libopencv_imgcodecs
+#LOCAL_SHARED_LIBRARIES += GLES_mali
+#include $(BUILD_EXECUTABLE)
+
+
+
+#include $(CLEAR_VARS)
+#LOCAL_MODULE := test
+#LOCAL_SRC_FILES += ../test.cpp 
+#LOCAL_C_INCLUDES = $(USR_INCLUDES)
+#LOCAL_CFLAGS = $(USR_CFLAGS)  
+#LOCAL_CPPFLAGS = $(USR_CPPFLAGS)    
+#LOCAL_LDFLAGS = $(USR_LDFLAGS)    
+#LOCAL_SHARED_LIBRARIES += GLES_mali
+#include $(BUILD_EXECUTABLE)
