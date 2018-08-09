@@ -25,7 +25,7 @@
 
 #define SOLVE_MATRIXA_RANSAC_NUM 256
 #define SOLVE_MATRIXA_RANSAC_POINT_NUM 6
-#define SOLVE_MATRIXA_RANSAC_PRECISE 1.6
+#define SOLVE_MATRIXA_RANSAC_PRECISE 1.5
 /*==========================================*/
 #define BLOCK_NUM (BLOCK_W*BLOCK_H)
 #define GRAY_W (IMAGE_IN_W/2)

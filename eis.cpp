@@ -1248,198 +1248,10 @@ int eis_init() {
 				event_2[0].wait();
 
 				std::uniform_int_distribution<unsigned> random_d(0, msgIn.matches_num-1);
-				float sum_x=0, sum_y=0;
-#ifdef __arm__
-				{
-					float32x4_t v_sum_x = vdupq_n_f32(0.0f);
-					float32x4_t v_sum_y = vdupq_n_f32(0.0f);
-					int i = 0;
-					for(;i<(msgIn.matches_num-3);i+=4){
-						float32x4x4_t v_a = vld4q_f32(&ptr0[i*4]);
-						v_sum_x = vaddq_f32(v_sum_x, v_a.val[0]);
-						v_sum_y = vaddq_f32(v_sum_y, v_a.val[1]);
-					}
-					{
-						float32x2_t v_a = vadd_f32(vget_high_f32(v_sum_x), vget_low_f32(v_sum_x));
-						float32x2_t v_b = vadd_f32(vget_high_f32(v_sum_y), vget_low_f32(v_sum_y));
-						float32x2_t v_c = vpadd_f32(v_a, v_b);
-						sum_x = vget_lane_f32(v_c, 0);
-						sum_y = vget_lane_f32(v_c, 1);
-					}
-					for(; i<msgIn.matches_num; i++){
-						sum_x += ptr0[i*4+0];
-						sum_y += ptr0[i*4+1];
-					}
-				}
-#else
-				for(int i=0; i<msgIn.matches_num; i++){
-					sum_x += ptr0[i*4+0];
-					sum_y += ptr0[i*4+1];
-				}
-#endif
-				float mean_x = sum_x / (float)msgIn.matches_num;
-				float mean_y = sum_y / (float)msgIn.matches_num;
-				float sum_distance = 0;
-#ifdef __arm__
-				{
-					float32x4_t v_mean_x = vdupq_n_f32(mean_x);
-					float32x4_t v_mean_y = vdupq_n_f32(mean_y);
-					float32x4_t v_sum_distance = vdupq_n_f32(0.0f);
-					int i=0;
-					for(;i<(msgIn.matches_num-3);i+=4){
-						float32x4x4_t v_a = vld4q_f32(&ptr0[i*4]);
-						float32x4_t v_b_x = vsubq_f32(v_a.val[0], v_mean_x);
-						float32x4_t v_b_x_sqare = vmulq_f32(v_b_x, v_b_x);
-						float32x4_t v_b_y = vsubq_f32(v_a.val[1], v_mean_y);
-						float32x4_t v_b_y_sqare = vmulq_f32(v_b_y, v_b_y);
-						v_sum_distance = vaddq_f32(v_sum_distance, v_b_x_sqare);
-						v_sum_distance = vaddq_f32(v_sum_distance, v_b_y_sqare);
-					}
-					{
-						float32x2_t v_a = vpadd_f32(vget_high_f32(v_sum_distance), vget_low_f32(v_sum_distance));
-						sum_distance = vget_lane_f32(v_a, 0) + vget_lane_f32(v_a, 1);
-					}
-					for(;i<msgIn.matches_num;i++)
-						sum_distance += (square(ptr0[i*4+0] - mean_x) + square(ptr0[i*4+1] - mean_y));
-				}
-				//float sum_distance_1 = 0;
-				//for(int i=0; i<msgIn.matches_num; i++)
-				//	sum_distance_1 += (square(ptr0[i*4+0] - mean_x) + square(ptr0[i*4+1] - mean_y));
-				//slog.info("neon %f, %f", sum_distance, sum_distance_1);
-#else
-				for(int i=0; i<msgIn.matches_num; i++)
-					sum_distance += (square(ptr0[i*4+0] - mean_x) + square(ptr0[i*4+1] - mean_y));
-#endif
-				float scale_xy = 1.414f * msgIn.matches_num / std::sqrt(sum_distance);
-				T << scale_xy, 0, -scale_xy*mean_x, 0, scale_xy, -scale_xy*mean_y, 0, 0, 1;
-				T_inv = T.inverse();
 				v_matches.resize(0);
 				for(int i=0; i<msgIn.matches_num; i++){
-					v_matches.emplace_back( scale_xy*ptr0[i*4+0] - scale_xy*mean_x,
-					                        scale_xy*ptr0[i*4+1] - scale_xy*mean_y,
-					                        scale_xy*ptr0[i*4+2] - scale_xy*mean_x,
-					                        scale_xy*ptr0[i*4+3] - scale_xy*mean_y);
+					v_matches.emplace_back(ptr0[i*4+0], ptr0[i*4+1], ptr0[i*4+2], ptr0[i*4+3]);
 				}
-#if solveH_8p
-                                for(int i=0;i<SOLVE_MATRIXA_RANSAC_NUM;i++){
-					static vector<int> rnds(SOLVE_MATRIXA_RANSAC_POINT_NUM);
-					for(int k=0;k<10;k++){
-						rnds.resize(0);
-						for(int m=0;m<SOLVE_MATRIXA_RANSAC_POINT_NUM;m++)
-							rnds.push_back(random_d(random_e));
-						if(check_solveH_ransac(rnds))
-							break;
-					}
-					static MatrixXf A(SOLVE_MATRIXA_RANSAC_POINT_NUM*2,9);
-					for(int k=0; k<SOLVE_MATRIXA_RANSAC_POINT_NUM; k++){
-						int id = rnds[k];
-						float x0 = v_matches[id].x0;
-						float y0 = v_matches[id].y0;
-						float x1 = v_matches[id].x1;
-						float y1 = v_matches[id].y1;
-						A.block<1,9>(k*2+0, 0) << 0, 0, 0, -x0, -y0, -1, y1*x0, y1*y0, y1;
-						A.block<1,9>(k*2+1, 0) << x0, y0, 1, 0, 0, 0, -x1*x0, -x1*y0, -x1;
-					}
-					JacobiSVD<MatrixXd> svd((A.transpose()*A).cast<double>(), Eigen::ComputeFullV);
-					MatrixXd V = svd.matrixV();
-					//JacobiSVD<MatrixXf> svd(A.transpose()*A, Eigen::ComputeFullV);
-					//MatrixXf V = svd.matrixV();
-					MatrixXf H0(3,3), H1(3,3);
-					H0 << V(0,8), V(1,8), V(2,8), V(3,8), V(4,8), V(5,8), V(6,8), V(7,8), V(8,8);
-					H1 = T_inv * H0 * T;
-                                        ptr1[i*16+0] = H1(0,0);
-                                        ptr1[i*16+1] = H1(0,1);
-                                        ptr1[i*16+2] = H1(0,2);
-                                        ptr1[i*16+3] = H1(1,0);
-                                        ptr1[i*16+4] = H1(1,1);
-                                        ptr1[i*16+5] = H1(1,2);
-                                        ptr1[i*16+6] = H1(2,0);
-                                        ptr1[i*16+7] = H1(2,1);
-                                        ptr1[i*16+8] = H1(2,2);
-                                }
-#endif
-#if solveH_3p
-                                for(int ransc_cnt=0; ransc_cnt<SOLVE_MATRIXA_RANSAC_NUM; ransc_cnt++){
-					static vector<int> rnds(3);
-					for(int k=0;k<10;k++){
-						rnds.resize(0);
-						for(int m=0;m<3;m++)
-							rnds.push_back(random_d(random_e));
-						if(check_solveH_ransac(rnds))
-							break;
-					}
-					static MatrixXf A(3*2,4);
-					static MatrixXf B(3*2,1);
-					for(int k=0; k<3; k++){
-						int id = rnds[k];
-						float x0 = v_matches[id].x0;
-						float y0 = v_matches[id].y0;
-						float x1 = v_matches[id].x1;
-						float y1 = v_matches[id].y1;
-						A.block<1,4>(k*2+0, 0) << x0, -y0, 1, 0;
-						A.block<1,4>(k*2+1, 0) << y0,  x0, 0, 1;
-						B.block<1,1>(k*2+0, 0) << x1;
-						B.block<1,1>(k*2+1, 0) << y1;
-					}
-					MatrixXf H0(3,3), H1(3,3);
-					MatrixXd V = A.cast<double>().colPivHouseholderQr().solve(B.cast<double>());
-					// cout << "V" << endl << V << endl;
-					// cout << "norm" << endl << V.block<2,1>(0,0).norm() << endl;
-					// V = V / V.block<2,1>(0,0).norm();
-					H0 << V(0,0), -V(1,0), V(2,0), V(1,0), V(0,0), V(3,0), 0, 0, 1;
-					H1 = T_inv * H0 * T;
-                                        ptr1[ransc_cnt*16+0] = H1(0,0);
-                                        ptr1[ransc_cnt*16+1] = H1(0,1);
-                                        ptr1[ransc_cnt*16+2] = H1(0,2);
-                                        ptr1[ransc_cnt*16+3] = H1(1,0);
-                                        ptr1[ransc_cnt*16+4] = H1(1,1);
-                                        ptr1[ransc_cnt*16+5] = H1(1,2);
-                                        ptr1[ransc_cnt*16+6] = H1(2,0);
-                                        ptr1[ransc_cnt*16+7] = H1(2,1);
-                                        ptr1[ransc_cnt*16+8] = H1(2,2);
-                                };
-#endif
-#if solveH_4p
-                                for(int ransc_cnt=0; ransc_cnt<SOLVE_MATRIXA_RANSAC_NUM; ransc_cnt++){
-					static vector<int> rnds(4);
-					for(int k=0;k<10;k++){
-						rnds.resize(0);
-						for(int m=0;m<4;m++)
-							rnds.push_back(random_d(random_e));
-						if(check_solveH_ransac(rnds))
-							break;
-					}
-					static MatrixXf A(4,3);
-					static MatrixXf B(4,1);
-					for(int k=0; k<4; k++){
-						int id = rnds[k];
-						float x0 = v_matches[id].x0;
-						float y0 = v_matches[id].y0;
-						float x1 = v_matches[id].x1;
-						float y1 = v_matches[id].y1;
-						A.block<1,3>(k, 0) << x0*x0+y0*y0, x0, y0;
-						B.block<1,1>(k, 0) << x0*x1+y0*y1;
-					}
-					MatrixXf H0(3,3), H1(3,3);
-					MatrixXd V = A.cast<double>().colPivHouseholderQr().solve(B.cast<double>());
-					// cout << "V" << endl << V << endl;
-					// cout << "norm" << endl << V.block<2,1>(0,0).norm() << endl;
-					// V = V / V.block<2,1>(0,0).norm();
-					float d_sin = sin(acos(V(0,0)));
-					H0 << V(0,0), -d_sin, V(1,0), d_sin, V(0,0), V(2,0), 0, 0, 1;
-					H1 = T_inv * H0 * T;
-                                        ptr1[ransc_cnt*16+0] = H1(0,0);
-                                        ptr1[ransc_cnt*16+1] = H1(0,1);
-                                        ptr1[ransc_cnt*16+2] = H1(0,2);
-                                        ptr1[ransc_cnt*16+3] = H1(1,0);
-                                        ptr1[ransc_cnt*16+4] = H1(1,1);
-                                        ptr1[ransc_cnt*16+5] = H1(1,2);
-                                        ptr1[ransc_cnt*16+6] = H1(2,0);
-                                        ptr1[ransc_cnt*16+7] = H1(2,1);
-                                        ptr1[ransc_cnt*16+8] = H1(2,2);
-                                };
-#endif
-#if solveH_2p
                                 for(int ransc_cnt=0; ransc_cnt<SOLVE_MATRIXA_RANSAC_NUM; ransc_cnt++){
 					static vector<int> rnds(4);
 					for(int k=0;k<10;k++){
@@ -1472,7 +1284,6 @@ int eis_init() {
                                         ptr1[ransc_cnt*16+7] = 0;
                                         ptr1[ransc_cnt*16+8] = 1;
                                 };
-#endif
 				queue.enqueueUnmapMemObject(msgIn.m_matches,  ptr0, NULL,     &event_3[0]);
 				queue.enqueueUnmapMemObject(m_matrixA_ransac, ptr1, &event_3, &event_4[0]);
 			} catch (cl::Error& e) {
@@ -1513,6 +1324,7 @@ int eis_init() {
                                 h0 << ptr0[evaluate_id*16+0], ptr0[evaluate_id*16+1], ptr0[evaluate_id*16+2],
                                       ptr0[evaluate_id*16+3], ptr0[evaluate_id*16+4], ptr0[evaluate_id*16+5],
                                       ptr0[evaluate_id*16+6], ptr0[evaluate_id*16+7], ptr0[evaluate_id*16+8];
+				// cout << "aft index " << evaluate_id << " h" << endl << h0 << endl;
 
 				v_matches_inside.resize(0);
 #ifdef _DRAW_KPS_
@@ -1523,7 +1335,7 @@ int eis_init() {
 					p0 << ptr3[i*4+0], ptr3[i*4+1], 1;
 					p1 << ptr3[i*4+2], ptr3[i*4+3], 1;
 					p1_ = h0 * p0;
-					if(square(p1_(0,0)/p1_(2,0)-p1(0,0)) + square(p1_(1,0)/p1_(2,0)-p1(1,0)) < SOLVE_MATRIXA_RANSAC_PRECISE*SOLVE_MATRIXA_RANSAC_PRECISE){
+					if((square(p1_(0,0)/p1_(2,0)-p1(0,0)) + square(p1_(1,0)/p1_(2,0)-p1(1,0))) < (SOLVE_MATRIXA_RANSAC_PRECISE*SOLVE_MATRIXA_RANSAC_PRECISE)){
 						v_matches_inside.push_back(v_matches[i]);
 #ifdef _DRAW_KPS_
 						v_matches_inside1.emplace_back(p0(0,0), p0(1,0), p1(0,0), p1(1,0));
@@ -1531,86 +1343,41 @@ int eis_init() {
 					}
 				}
 				slog.info("solve H matches %d, inside %d(%d)", msgIn.matches_num, v_matches_inside.size(), *evaluate_iter);
-#if solveH_8p
-				MatrixXf A(v_matches_inside.size()*2, 9);
-				for(unsigned i=0; i<v_matches_inside.size(); i++){
-					float x0 = v_matches_inside[i].x0;
-					float y0 = v_matches_inside[i].y0;
-					float x1 = v_matches_inside[i].x1;
-					float y1 = v_matches_inside[i].y1;
-					A.block<1,9>(i*2+0, 0) << 0, 0, 0, -x0, -y0, -1, y1*x0, y1*y0, y1;
-					A.block<1,9>(i*2+1, 0) << x0, y0, 1, 0, 0, 0, -x1*x0, -x1*y0, -x1;
+				float t0 = 0, t1 = 0;
+				if(v_matches_inside.size() > 4){
+					MatrixXf A(v_matches_inside.size(), 1);
+					MatrixXf B(v_matches_inside.size(), 1);
+					for(unsigned i=0; i<v_matches_inside.size(); i++){
+						float x0 = v_matches_inside[i].x0;
+						float y0 = v_matches_inside[i].y0;
+						float x1 = v_matches_inside[i].x1;
+						float y1 = v_matches_inside[i].y1;
+						A.block<1,1>(i, 0) << x1 - x0;
+						B.block<1,1>(i, 0) << y1 - y0;
+					}
+					t0 = A.mean();
+					t1 = B.mean();
 				}
-				JacobiSVD<MatrixXd> svd(A.cast<double>().transpose()*A.cast<double>(), Eigen::ComputeFullV);
-				MatrixXd V = svd.matrixV();
-				h0 << V(0,8), V(1,8), V(2,8), V(3,8), V(4,8), V(5,8), V(6,8), V(7,8), V(8,8);
-				// cout << "S " << endl << svd.singularValues() << endl;
-                                h1 = T_inv * h0 * T;
-
-                                ptr2[0] = h1(0,0);
-                                ptr2[1] = h1(0,1);
-                                ptr2[2] = h1(0,2);
-                                ptr2[3] = h1(1,0);
-                                ptr2[4] = h1(1,1);
-                                ptr2[5] = h1(1,2);
-                                ptr2[6] = h1(2,0);
-                                ptr2[7] = h1(2,1);
-                                ptr2[8] = h1(2,2);
-#endif
-#if solveH_3p
-				MatrixXf A(v_matches_inside.size()*2, 4);
-				MatrixXf B(v_matches_inside.size()*2, 1);
-				for(unsigned i=0; i<v_matches_inside.size(); i++){
-					float x0 = v_matches_inside[i].x0;
-					float y0 = v_matches_inside[i].y0;
-					float x1 = v_matches_inside[i].x1;
-					float y1 = v_matches_inside[i].y1;
-					A.block<1,4>(i*2+0, 0) << x0, -y0, 1, 0;
-					A.block<1,4>(i*2+1, 0) << y0,  x0, 0, 1;
-					B.block<1,1>(i*2+0, 0) << x1;
-					B.block<1,1>(i*2+1, 0) << y1;
-				}
-				MatrixXf H0(3,3), H1(3,3);
-				MatrixXd V = A.cast<double>().colPivHouseholderQr().solve(B.cast<double>());
-				// V = V / V.block<2,1>(0,0).norm();
-				H0 << V(0,0), -V(1,0), V(2,0), V(1,0), V(0,0), V(3,0), 0, 0, 1;
-				H1 = T_inv * H0 * T;
-				ptr2[0] = H1(0,0);
-				ptr2[1] = H1(0,1);
-				ptr2[2] = H1(0,2);
-				ptr2[3] = H1(1,0);
-				ptr2[4] = H1(1,1);
-				ptr2[5] = H1(1,2);
-				ptr2[6] = H1(2,0);
-				ptr2[7] = H1(2,1);
-				ptr2[8] = H1(2,2);
-#endif
-#if solveH_4p
-				MatrixXf A(v_matches_inside.size(), 3);
-				MatrixXf B(v_matches_inside.size(), 1);
-				for(unsigned i=0; i<v_matches_inside.size(); i++){
-					float x0 = v_matches_inside[i].x0;
-					float y0 = v_matches_inside[i].y0;
-					float x1 = v_matches_inside[i].x1;
-					float y1 = v_matches_inside[i].y1;
-					A.block<1,3>(i, 0) << x0*x0+y0*y0, x0, y0;
-					B.block<1,1>(i, 0) << x0*x1+y0*y1;
-				}
-				MatrixXf H0(3,3), H1(3,3);
-				MatrixXd V = A.cast<double>().colPivHouseholderQr().solve(B.cast<double>());
-				// V = V / V.block<2,1>(0,0).norm();
-				float d_sin = sin(acos(V(0,0)));
-				H0 << V(0,0), -d_sin, V(1,0), d_sin, V(0,0), V(2,0), 0, 0, 1;
-				H1 = T_inv * H0 * T;
-				ptr2[0] = H1(0,0);
-				ptr2[1] = H1(0,1);
-				ptr2[2] = H1(0,2);
-				ptr2[3] = H1(1,0);
-				ptr2[4] = H1(1,1);
-				ptr2[5] = H1(1,2);
-				ptr2[6] = H1(2,0);
-				ptr2[7] = H1(2,1);
-				ptr2[8] = H1(2,2);
+#if 1
+                                ptr2[0] = 1;
+                                ptr2[1] = 0;
+                                ptr2[2] = t0;
+                                ptr2[3] = 0;
+                                ptr2[4] = 1;
+                                ptr2[5] = t1;
+                                ptr2[6] = 0;
+                                ptr2[7] = 0;
+                                ptr2[8] = 1;
+#else
+                                ptr2[0] = h0(0,0);
+                                ptr2[1] = h0(0,1);
+                                ptr2[2] = h0(0,2);
+                                ptr2[3] = h0(1,0);
+                                ptr2[4] = h0(1,1);
+                                ptr2[5] = h0(1,2);
+                                ptr2[6] = h0(2,0);
+                                ptr2[7] = h0(2,1);
+                                ptr2[8] = h0(2,2);
 #endif
 				queue.enqueueUnmapMemObject(m_matrixA_ransac, ptr0, NULL,      &event_10[0]);
 				queue.enqueueUnmapMemObject(m_evaluate,       ptr1, &event_10, &event_11[0]);
