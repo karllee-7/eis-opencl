@@ -102,7 +102,7 @@ int main(void) {
 		slog_t slog("loadImage");
 		Mat img, img_resize, img_rgb565, img_rgba;
 		// cv::VideoCapture capture("temp/IMG_0235.MOV");
-		cv::VideoCapture capture("temp/v_test_1.h264");
+		cv::VideoCapture capture("temp/15530444.h264");
 		// cv::VideoCapture capture("temp/20180525-14-15.mp4");
 		// cv::VideoCapture capture("temp/H249_0.mp4");
 		if(!capture.isOpened()){
