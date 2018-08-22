@@ -25,6 +25,8 @@
 #include "eis.h"
 #include "slog.hpp"
 #include "threadPool.hxx"
+#include "json/json.h"
+
 
 using std::string;
 using std::cout;
@@ -40,157 +42,75 @@ using std::mutex;
 using std::unique_lock;
 using std::condition_variable;
 
-#ifndef __arm__
+
 #include "opencv/cv.hpp"
 using cv::Mat;
 using cv::imshow;
 using cv::imread;
 using cv::imwrite;
 using cv::waitKey;
-#endif
 /*==============================================================================================*/
 int main(void) {
 	slog_t slog("main");
 	atomic<bool> run_(true);
-        if(eis_init()){
-		slog.err("init eis error.");
-		return -1;
-	}
-#ifndef __arm__
-	karl::msgQueue<Mat> imgQueue;
-#endif
+        assert(eis_init() == 0);
 
-#ifdef __arm__
-        thread t_loadImage([&run_](){
-		slog_t slog("loadImage");
-		auto file_buffer = (uint8_t*)malloc(IMAGE_IN_W*IMAGE_IN_H*2);
-		FILE* fd = fopen("temp/img.dat", "rb");
-		if(fd == NULL){
-			slog.err("can not open file img.dat");
-			free(file_buffer);
-			run_ = false;
-			return ;
-		}
-		int cnt = fread(file_buffer, sizeof(uint8_t), IMAGE_IN_W*IMAGE_IN_H*2, fd);
-		if(cnt != IMAGE_IN_W*IMAGE_IN_H*2){
-			slog.err("file img.dat length error.");
-			fclose(fd);
-			free(file_buffer);
-			run_ = false;
-			return ;
-		}
-		fclose(fd);
-		int frame_cnt = 0;
-		slog.info("thread loadImage start run.");
-		while(run_){
-			uint8_t *ptr0, *ptr1;
-			int err;
-			err = eis_input_command(EIS_COMMAND_GET_BUFFER, NULL, NULL, (void**)&ptr0, (void**)&ptr1);
-			assert(err >= 0);
-			memcpy(ptr0, file_buffer, sizeof(uint8_t)*IMAGE_IN_W*IMAGE_IN_H*2);
-			memcpy(ptr1, file_buffer, sizeof(uint8_t)*IMAGE_IN_W*IMAGE_IN_H*2);
-			err = eis_input_command(EIS_COMMAND_RELEASE_BUFFER, ptr0, ptr1);
-			assert(err >= 0);
-			frame_cnt++;
-		}
-		slog.info("thread loadImage exit.");
-		free(file_buffer);
-        });
-/*=========================================================*/
-#else
+	karl::msgQueue<Mat> imgQueue;
         thread t_loadImage([&run_, &imgQueue](){
 		slog_t slog("loadImage");
 		Mat img, img_resize, img_rgb565, img_rgba;
-		// cv::VideoCapture capture("temp/IMG_0235.MOV");
-		cv::VideoCapture capture("temp/15530444.h264");
-		// cv::VideoCapture capture("temp/20180525-14-15.mp4");
-		// cv::VideoCapture capture("temp/H249_0.mp4");
-		if(!capture.isOpened()){
-			slog.err("can't capture the video file");
-			run_ = false;
-			return ;
-		}
+		cv::VideoCapture capture("temp/eis_output_thread.h264");
+		assert(capture.isOpened());
+		std::ifstream mpu_ifs;
+		mpu_ifs.open ("temp/mpu_output_thread", std::ifstream::in);
+		assert(mpu_ifs.is_open());
+		Json::Value mpu_root;
+		Json::Reader mpu_reader;
+		assert(mpu_reader.parse(mpu_ifs, mpu_root));
 		slog.info("thread loadImage start run.");
 		while(run_){
 			auto ret = capture.read(img);
-			cout << "CV_CAP_PROP_POS_FRAMES " << capture.get(CV_CAP_PROP_POS_FRAMES) << endl;
-			cout << "CV_CAP_PROP_POS_MSEC " << capture.get(CV_CAP_PROP_POS_MSEC) << endl;
+			//cout << "CV_CAP_PROP_POS_FRAMES " << capture.get(CV_CAP_PROP_POS_FRAMES) << endl;
+			//cout << "CV_CAP_PROP_POS_MSEC " << capture.get(CV_CAP_PROP_POS_MSEC) << endl;
 			if(!ret){
 				slog.war("capture read error.");
 				run_ = false;
 				continue ;
 			}
-
-#ifdef _CAM_UNDISTORT_
-			{
-				Mat camera_matrix(3,3,CV_32F);
-				Mat distort_coeffs(5,1,CV_32F);
-				camera_matrix.ptr<float>(0)[0] = 1398.62903365191;
-				camera_matrix.ptr<float>(0)[1] = 0;
-				camera_matrix.ptr<float>(0)[2] = 1050.91363112597;
-				camera_matrix.ptr<float>(1)[0] = 0;
-				camera_matrix.ptr<float>(1)[1] = 1365.71260963290;
-				camera_matrix.ptr<float>(1)[2] = 496.326169224848;
-				camera_matrix.ptr<float>(2)[0] = 0;
-				camera_matrix.ptr<float>(2)[1] = 0;
-				camera_matrix.ptr<float>(2)[2] = 1;
-				distort_coeffs.ptr<float>(0)[0] = -0.393348138522701;
-				distort_coeffs.ptr<float>(1)[0] = 0.152668588560805;
-				distort_coeffs.ptr<float>(2)[0] = 0;
-				distort_coeffs.ptr<float>(3)[0] = 0;
-				distort_coeffs.ptr<float>(4)[0] = 0;
-				Mat dst;
-				cv::undistort(img, dst, camera_matrix, distort_coeffs);
-				img = dst;
-			}
-#endif
-
+			int frame_index = capture.get(CV_CAP_PROP_POS_FRAMES)-1;
+			quaternion_cls pos(
+				(double)mpu_root["quaternion"][frame_index][0].asInt() / 1073741824.0,
+				(double)mpu_root["quaternion"][frame_index][1].asInt() / 1073741824.0,
+				(double)mpu_root["quaternion"][frame_index][2].asInt() / 1073741824.0,
+				(double)mpu_root["quaternion"][frame_index][3].asInt() / 1073741824.0
+			);
+			printf("frame index %d, quaternion %f, %f, %f, %f\n", frame_index, pos.get_q0(), pos.get_q1(), pos.get_q2(), pos.get_q3());
 			cv::resize(img, img_resize, cv::Size(IMAGE_IN_W, IMAGE_IN_H));
 			cv::cvtColor(img_resize, img_rgb565, CV_BGR2BGR565);
 			cv::cvtColor(img_resize, img_rgba, CV_BGR2RGBA);
-
-			uint8_t *ptr0, *ptr1;
-			int err;
-			err = eis_input_command(EIS_COMMAND_GET_BUFFER, NULL, NULL, (void**)&ptr0, (void**)&ptr1);
+			uint8_t *ptr0;
+			int err = eis_input_command(EIS_COMMAND_GET_BUFFER, NULL, NULL, (void**)&ptr0);
 			assert(err >= 0);
 			for(int row=0;row<IMAGE_IN_H;row++)
-				memcpy(ptr0 + row*IMAGE_IN_W*2, img_rgb565.ptr<uint8_t>(row), sizeof(uint8_t)*IMAGE_IN_W*2);
-			for(int row=0;row<IMAGE_IN_H;row++)
-				memcpy(ptr1 + row*IMAGE_IN_W*4, img_rgba.ptr<uint8_t>(row), sizeof(uint8_t)*IMAGE_IN_W*4);
-			err = eis_input_command(EIS_COMMAND_RELEASE_BUFFER, ptr0, ptr1);
+				memcpy(ptr0 + row*IMAGE_IN_W*4, img_rgba.ptr<uint8_t>(row), sizeof(uint8_t)*IMAGE_IN_W*4);
+			err = eis_input_command(EIS_COMMAND_RELEASE_BUFFER, ptr0, &pos);
 			assert(err >= 0);
-#ifndef __arm__
 			Mat img_resize_1;
 			cv::resize(img_resize, img_resize_1, cv::Size(IMAGE_IN_W/2, IMAGE_IN_H/2));
 			imgQueue.push(img_resize_1);
-#endif
 		}
 		slog.info("thread loadImage exit.");
+		mpu_ifs.close();
 		capture.release();
         });
-#endif
-/*=========================================================*/
-#ifndef __arm__
-	cv::VideoWriter writer("temp/eis_out.avi", cv::VideoWriter::fourcc('D','I','V','X'), 30.0, cv::Size(IMAGE_OUT_W, IMAGE_OUT_H));
-        if(!writer.isOpened()){
-		slog.err("error: cant creat the output file");
-		run_ = false;
-        }
-#endif
 /*=========================================================*/
 	int frame_cnt = 0;
-	struct timeval t_s, t_e;
-#ifndef __arm__
-	Mat img_0, img_1, img_2;
-#endif
-
 	slog.info("main loop start.");
+	Mat img_1, img_2;
 	while(run_){
 		uint8_t* ptr0;
-		int err;
-		err = eis_output_command(EIS_COMMAND_GET_BUFFER, NULL, (void**)&ptr0);
+		int err = eis_output_command(EIS_COMMAND_GET_BUFFER, NULL, (void**)&ptr0);
 		assert(err >= 0);
-#ifndef __arm__
 		{
 			Mat temp_image_0(IMAGE_OUT_H, IMAGE_OUT_W, CV_8UC4);
 			Mat temp_image_1;
@@ -201,12 +121,12 @@ int main(void) {
 					dst_ptr[col] = src_ptr[col];
 				}
 			}
-			cv::cvtColor(temp_image_0, img_0, CV_RGBA2BGR);
-			cv::resize(img_0, img_1, cv::Size(IMAGE_OUT_W/2, IMAGE_OUT_H/2));
+			cv::cvtColor(temp_image_0, temp_image_1, CV_BGRA2RGB);
+			cv::resize(temp_image_1, img_1, cv::Size(IMAGE_OUT_W/2, IMAGE_OUT_H/2));
 		}
-		imshow("1", img_1);
-		writer.write(img_0);
-#endif
+		err = eis_output_command(EIS_COMMAND_RELEASE_BUFFER, ptr0);
+		assert(err >= 0);
+		imshow("img_1", img_1);
 #if 0
 		{
 			array<size_t, 3> image_origin = {0, 0, 0};
@@ -257,27 +177,18 @@ int main(void) {
 		}
 		imshow("4", img);
 #endif
-		err = eis_output_command(EIS_COMMAND_RELEASE_BUFFER, ptr0);
-		assert(err >= 0);
 #ifndef __arm__
 		while(imgQueue.size() > 0)
 			img_2 = imgQueue.pop();
 
 		
-		imshow("main 1", img_2);
+		imshow("img_2", img_2);
 #endif
 		slog.info("main frame_cnt: %d", frame_cnt);
-		if(frame_cnt % 30 == 0){
-			gettimeofday(&t_e,NULL);
-			slog.info_v0("time used is %fs", (float)(t_e.tv_sec - t_s.tv_sec) + (float)(t_e.tv_usec - t_s.tv_usec)/1000000.0f);
-			t_s = t_e;
-		}
-		if(frame_cnt > 600)
-			run_ = false;
 		frame_cnt ++;
 		
 #ifndef __arm__
-		int key = waitKey(1);
+		int key = waitKey(10);
 		if(key == 27){
 			run_ = false;
 		}else if(key == 112){
@@ -289,7 +200,7 @@ int main(void) {
 	}
 	slog.info("main loop exit.");
 
-#ifndef __arm__
+#if 0
 	if(writer.isOpened())
 		writer.release();
 	imgQueue.discon();
