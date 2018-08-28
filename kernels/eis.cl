@@ -5,7 +5,7 @@ kernel void prepareImage(read_only image2d_t srcImage, global uchar* dstGray, sa
 	float16 A = vload16(0, matrixA);
 	float2 P_o;
 	{
-		float3 a = (float3)((float)(x-IMAGE_IN_W/2), (float)(y-IMAGE_IN_H/2), (float)CAM_PAM_F);
+		float3 a = (float3)((float)(x*2-IMAGE_IN_W/2), (float)(y*2-IMAGE_IN_H/2), (float)CAM_PAM_F);
 		float3 b = (float3)(dot(A.s012, a), dot(A.s345, a), dot(A.s678, a));
 		float scale = (float)CAM_PAM_F/b.z;
 		P_o = b.xy * scale + (float2)(IMAGE_IN_W/2, IMAGE_IN_H/2);
@@ -69,7 +69,7 @@ kernel void cvtColor_gray(read_only image2d_t srcImage, global uchar* dstGray, s
 	int x = get_global_id(0);
 	int y = get_global_id(1);
 	int stride = get_global_size(0);
-	float4 color_rgb = read_imagef(srcImage, sampler, (float2)((float)x, (float)y));
+	float4 color_rgb = read_imagef(srcImage, sampler, (float2)((float)(x*2), (float)(y*2)));
 	float  color_gray = color_rgb.s0 * 0.299f + color_rgb.s1 * 0.587f + color_rgb.s2 * 0.114f;
         *(dstGray + stride * y + x) = (uchar)(color_gray * 255.0f);
 
@@ -77,5 +77,7 @@ kernel void cvtColor_gray(read_only image2d_t srcImage, global uchar* dstGray, s
 		write_imagef(debugImg, (int2)(x, y), (float4)(color_gray, color_gray, color_gray, 0.0f));
 	}
 }
+/*===============================================================================================================================*/
+
 /*===============================================================================================================================*/
 

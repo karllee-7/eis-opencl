@@ -205,6 +205,10 @@ int eis_input_command(int command, void* ptr_image2d, quaternion_cls *pos, void*
 	}
 	if(run_ == false || platforms.size() == 0 || devices.size() == 0 || context.get() == NULL){	
 		slog.war("platforms|devices|context is empty, or pipline is not running, please call eis_init() first.");
+		slog.war("run_ %s", run_? "true" : "false");
+		slog.war("platforms.size %d", platforms.size());
+		slog.war("devices.size %d", devices.size());
+		slog.war("context.get %d", context.get());
 		return -1;
 	}
 	if(queue.get() == NULL){
@@ -305,7 +309,7 @@ int eis_output_command(int command, void* ptr_image2d, void** pptr_image2d){
 }
 /*==============================================================================================*/
 int eis_init() {
-	cl_int cl_err;
+	cl_int cl_ret;
 	std::srand(1);
 	slog_t slog("eis main");
 	clBuildOptions \
@@ -330,13 +334,21 @@ int eis_init() {
 	}
 	run_ = true;
 /*=========================================================*/
-	assert(!cl::Platform::get(&platforms));
-	assert(!platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &devices));
+	cl_ret = cl::Platform::get(&platforms);
+	if(cl_ret){
+		slog.err("cl::Platform::get error.");
+		return -1;
+	}
+	cl_ret = platforms[0].getDevices(CL_DEVICE_TYPE_ALL, &devices);
+	if(cl_ret){
+		slog.err("platforms[0].getDevices error.");
+		return -1;
+	}
 	for(size_t i=0; i<devices.size(); i++) 
 		slog.info("Device: %s Version: %s", devices[i].getInfo<CL_DEVICE_NAME>().c_str(), devices[i].getInfo<CL_DRIVER_VERSION>().c_str());
 
-	context = cl::Context(devices, NULL, NULL, NULL, &cl_err);
-	assert(!cl_err);
+	context = cl::Context(devices, NULL, NULL, NULL, &cl_ret);
+	assert(!cl_ret);
 	slog.info("creat context success.");
 /*=========================================================*/
 #if 0
@@ -367,33 +379,27 @@ int eis_init() {
 		cl::Kernel kernel_5(program, "cvtColor_gray");
 
                 cl::NDRange k0_offset(0, 0);
-                cl::NDRange k0_global(IMAGE_IN_W, IMAGE_IN_H);
+                cl::NDRange k0_global(IMAGE_IN_W/2, IMAGE_IN_H/2);
                 cl::NDRange k0_local(32, 8);
 
                 cl::NDRange k1_offset(0, 0);
-                cl::NDRange k1_global(IMAGE_IN_W/2, IMAGE_IN_H/2);
-                cl::NDRange k1_local(32, 8);
+                cl::NDRange k1_global(IMAGE_IN_W/4, IMAGE_IN_H/4);
+                cl::NDRange k1_local(32, 4);
 
                 cl::NDRange k2_offset(0, 0);
-                cl::NDRange k2_global(IMAGE_IN_W/4, IMAGE_IN_H/4);
-                cl::NDRange k2_local(32, 4);
+                cl::NDRange k2_global(IMAGE_IN_W/8, IMAGE_IN_H/8);
+                cl::NDRange k2_local(16, 2);
 
                 cl::NDRange k3_offset(0, 0);
-                cl::NDRange k3_global(IMAGE_IN_W/8, IMAGE_IN_H/8);
-                cl::NDRange k3_local(16, 2);
-
-                cl::NDRange k4_offset(0, 0);
-                cl::NDRange k4_global(IMAGE_IN_W/16, IMAGE_IN_H/16);
-                cl::NDRange k4_local(8, 1);
+                cl::NDRange k3_global(IMAGE_IN_W/16, IMAGE_IN_H/16);
+                cl::NDRange k3_local(8, 1);
 
 		loadImageMsg_t msgPre;
                 cl::Buffer m_matrixA(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, sizeof(float)*16);
-                cl::Buffer m_org_gray(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, sizeof(uint8_t)*IMAGE_IN_W*IMAGE_IN_H);
                 cl::Buffer m_gray_L1(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, sizeof(uint8_t)*IMAGE_IN_W/2*IMAGE_IN_H/2);
                 cl::Buffer m_gray_L2(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, sizeof(uint8_t)*IMAGE_IN_W/4*IMAGE_IN_H/4);
                 cl::Buffer m_gray_L3(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, sizeof(uint8_t)*IMAGE_IN_W/8*IMAGE_IN_H/8);
                 cl::Buffer m_gray_L4(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, sizeof(uint8_t)*IMAGE_IN_W/16*IMAGE_IN_H/16);
-                cl::Buffer m_pre_org_gray(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, sizeof(uint8_t)*IMAGE_IN_W*IMAGE_IN_H);
                 cl::Buffer m_pre_gray_L1(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, sizeof(uint8_t)*IMAGE_IN_W/2*IMAGE_IN_H/2);
                 cl::Buffer m_pre_gray_L2(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, sizeof(uint8_t)*IMAGE_IN_W/4*IMAGE_IN_H/4);
                 cl::Buffer m_pre_gray_L3(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, sizeof(uint8_t)*IMAGE_IN_W/8*IMAGE_IN_H/8);
@@ -407,8 +413,6 @@ int eis_init() {
 		assert(k2_global.get()[1] % k2_local.get()[1] == 0);
 		assert(k3_global.get()[0] % k3_local.get()[0] == 0);
 		assert(k3_global.get()[1] % k3_local.get()[1] == 0);
-		assert(k4_global.get()[0] % k4_local.get()[0] == 0);
-		assert(k4_global.get()[1] % k4_local.get()[1] == 0);
                 slog.info("thread normalize Image start run.");
 		bool isFirst = true;
 		quaternion_cls pos_curr(1.0, 0.0, 0.0, 0.0);
@@ -451,49 +455,41 @@ int eis_init() {
 			}
 			try{ 
 				kernel_0.setArg(0, msgIn.m_img);
-				kernel_0.setArg(1, m_org_gray);
+				kernel_0.setArg(1, m_gray_L1);
 				kernel_0.setArg(2, sampler);
 				kernel_0.setArg(3, m_matrixA);
 				kernel_0.setArg(4, m_debugImg);
 				queue.enqueueNDRangeKernel(kernel_0, k0_offset, k0_global, k0_local, &event_1, &event_2[0]);
-				kernel_1.setArg(0, m_org_gray);
-				kernel_1.setArg(1, m_gray_L1);
+				kernel_1.setArg(0, m_gray_L1);
+				kernel_1.setArg(1, m_gray_L2);
 				kernel_1.setArg(2, m_debugImg);
 				queue.enqueueNDRangeKernel(kernel_1, k1_offset, k1_global, k1_local, &event_2, &event_3[0]);
-				kernel_2.setArg(0, m_gray_L1);
-				kernel_2.setArg(1, m_gray_L2);
+				kernel_2.setArg(0, m_gray_L2);
+				kernel_2.setArg(1, m_gray_L3);
 				kernel_2.setArg(2, m_debugImg);
 				queue.enqueueNDRangeKernel(kernel_2, k2_offset, k2_global, k2_local, &event_3, &event_4[0]);
-				kernel_3.setArg(0, m_gray_L2);
-				kernel_3.setArg(1, m_gray_L3);
+				kernel_3.setArg(0, m_gray_L3);
+				kernel_3.setArg(1, m_gray_L4);
 				kernel_3.setArg(2, m_debugImg);
 				queue.enqueueNDRangeKernel(kernel_3, k3_offset, k3_global, k3_local, &event_4, &event_5[0]);
-				kernel_4.setArg(0, m_gray_L3);
-				kernel_4.setArg(1, m_gray_L4);
-				kernel_4.setArg(2, m_debugImg);
-				queue.enqueueNDRangeKernel(kernel_4, k4_offset, k4_global, k4_local, &event_5, &event_6[0]);
 				kernel_5.setArg(0, msgPre.m_img);
-				kernel_5.setArg(1, m_pre_org_gray);
+				kernel_5.setArg(1, m_pre_gray_L1);
 				kernel_5.setArg(2, sampler);
-				kernel_5.setArg(3, m_debugImg);
-				queue.enqueueNDRangeKernel(kernel_5, k0_offset, k0_global, k0_local, &event_6, &event_7[0]);
-				kernel_1.setArg(0, m_pre_org_gray);
-				kernel_1.setArg(1, m_pre_gray_L1);
-				kernel_1.setArg(2, m_debugImg);
-				queue.enqueueNDRangeKernel(kernel_1, k1_offset, k1_global, k1_local, &event_7, &event_8[0]);
-				kernel_2.setArg(0, m_pre_gray_L1);
-				kernel_2.setArg(1, m_pre_gray_L2);
-				kernel_2.setArg(2, m_debugImg);
-				queue.enqueueNDRangeKernel(kernel_2, k2_offset, k2_global, k2_local, &event_8, &event_9[0]);
-				kernel_3.setArg(0, m_pre_gray_L2);
-				kernel_3.setArg(1, m_pre_gray_L3);
-				kernel_3.setArg(2, m_debugImg);
-				queue.enqueueNDRangeKernel(kernel_3, k3_offset, k3_global, k3_local, &event_9, &event_10[0]);
-				kernel_4.setArg(0, m_pre_gray_L3);
-				kernel_4.setArg(1, m_pre_gray_L4);
-				kernel_4.setArg(2, m_debugImg);
-				queue.enqueueNDRangeKernel(kernel_4, k4_offset, k4_global, k4_local, &event_10, &event_11[0]);
-				event_11[0].wait(); 
+				kernel_5.setArg(3, m_debugImg_aux);
+				queue.enqueueNDRangeKernel(kernel_5, k0_offset, k0_global, k0_local, &event_5, &event_6[0]);
+				kernel_1.setArg(0, m_pre_gray_L1);
+				kernel_1.setArg(1, m_pre_gray_L2);
+				kernel_1.setArg(2, m_debugImg_aux);
+				queue.enqueueNDRangeKernel(kernel_1, k1_offset, k1_global, k1_local, &event_6, &event_7[0]);
+				kernel_2.setArg(0, m_pre_gray_L2);
+				kernel_2.setArg(1, m_pre_gray_L3);
+				kernel_2.setArg(2, m_debugImg_aux);
+				queue.enqueueNDRangeKernel(kernel_2, k2_offset, k2_global, k2_local, &event_7, &event_8[0]);
+				kernel_3.setArg(0, m_pre_gray_L3);
+				kernel_3.setArg(1, m_pre_gray_L4);
+				kernel_3.setArg(2, m_debugImg_aux);
+				queue.enqueueNDRangeKernel(kernel_3, k3_offset, k3_global, k3_local, &event_8, &event_9[0]);
+				event_9[0].wait(); 
 			} catch(cl::Error& e) { 
 				slog.err("enqueue kernel | %s | %d", e.what(), e.err()); 
 				if(event_2[0]() != NULL) slog.err("event_2: %d", event_2[0].getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>());
@@ -504,8 +500,8 @@ int eis_init() {
 				if(event_7[0]() != NULL) slog.err("event_7: %d", event_7[0].getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>());
 				if(event_8[0]() != NULL) slog.err("event_8: %d", event_8[0].getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>());
 				if(event_9[0]() != NULL) slog.err("event_9: %d", event_9[0].getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>());
-				if(event_10[0]() != NULL) slog.err("event_10: %d", event_10[0].getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>());
-				if(event_11[0]() != NULL) slog.err("event_11: %d", event_11[0].getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>());
+				// if(event_10[0]() != NULL) slog.err("event_10: %d", event_10[0].getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>());
+				// if(event_11[0]() != NULL) slog.err("event_11: %d", event_11[0].getInfo<CL_EVENT_COMMAND_EXECUTION_STATUS>());
 				run_ = false; 
 				continue; 
 			}

@@ -8,8 +8,8 @@ ifeq ($(ARCH), x86)
 INC_PATH += -I./include -I/opt/OpenCV/include -I/opt/Eigen/include -I/usr/include/jsoncpp
 LIB_PATH += -L./lib -L/opt/OpenCV/lib -L.
 LIB      += -lOpenCL -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lopencv_videoio -ljsoncpp
-CFLAGS   += -fPIC -Wall -g
-CPPFLAGS += -fPIC -Wall -g
+CFLAGS   += -fPIC -Wall -g 
+CPPFLAGS += -fPIC -Wall -g 
 LDFLAGS  += -lpthread -Wl,-rpath=./
 endif
 

@@ -1,4 +1,5 @@
 #define _SLOG_FILE_ "slog"
+#define _CHECK_TIME  1
 // #define _CAM_UNDISTORT_
 /*==============================================================================================*/
 #include <memory>
@@ -52,9 +53,14 @@ using cv::waitKey;
 #endif
 /*==============================================================================================*/
 int main(void) {
+	int ret;
 	slog_t slog("main");
 	atomic<bool> run_(true);
-        assert(eis_init() == 0);
+	ret = eis_init();
+	if(ret < 0){
+		slog.err("eis_init error");
+		return -1;
+	}
 #ifdef __arm__
         thread t_loadImage([&run_, &slog](){
 		slog.info("thread loadImage start run.");
@@ -71,6 +77,7 @@ int main(void) {
 #else
 	karl::msgQueue<Mat> imgQueue;
         thread t_loadImage([&run_, &imgQueue](){
+		int ret;
 		slog_t slog("loadImage");
 		Mat img, img_resize, img_rgb565, img_rgba;
 		cv::VideoCapture capture("temp/eis_output_thread.h264");
@@ -80,7 +87,8 @@ int main(void) {
 		assert(mpu_ifs.is_open());
 		Json::Value mpu_root;
 		Json::Reader mpu_reader;
-		assert(mpu_reader.parse(mpu_ifs, mpu_root));
+		ret = mpu_reader.parse(mpu_ifs, mpu_root);
+		assert(ret);
 		slog.info("thread loadImage start run.");
 		while(run_){
 			auto ret = capture.read(img);
@@ -119,6 +127,11 @@ int main(void) {
 #endif
 /*=========================================================*/
 	int frame_cnt = 0;
+#ifdef _CHECK_TIME
+	timeval tv_s, tv_e;
+	gettimeofday(&tv_s, NULL);
+	float time_min = std::numeric_limits<float>::max();
+#endif
 	slog.info("main loop start.");
 	while(run_){
 		uint8_t* ptr0;
@@ -137,17 +150,19 @@ int main(void) {
 				}
 			}
 			cv::cvtColor(temp_image_0, temp_image_1, CV_BGRA2RGB);
-			img_1 = temp_image_1;
-			// cv::resize(temp_image_1, img_1, cv::Size(IMAGE_OUT_W/2, IMAGE_OUT_H/2));
+			// img_1 = temp_image_1;
+			cv::resize(temp_image_1, img_1, cv::Size(IMAGE_OUT_W/2, IMAGE_OUT_H/2));
 		}
 #endif
 		err = eis_output_command(EIS_COMMAND_RELEASE_BUFFER, ptr0);
 		assert(err >= 0);
 #ifndef __arm__
-		while(imgQueue.size() > 0)
+		while(imgQueue.size() > 0){
 			img_2 = imgQueue.pop();
-		imshow("img_1", img_1);
-		imshow("img_2", img_2);
+			imshow("img_2", img_2);
+		}
+		// if(img_1.rows>0)
+			imshow("img_1", img_1);
 
 		int key = waitKey(10);
 		if(key == 27){
@@ -159,6 +174,12 @@ int main(void) {
 		}
 #endif
 		// slog.info("main frame_cnt: %d", frame_cnt);
+#ifdef _CHECK_TIME
+		gettimeofday(&tv_e, NULL);
+		time_min = std::min(time_min, (float)(tv_e.tv_sec - tv_s.tv_sec) + (float)(tv_e.tv_usec - tv_s.tv_usec) * 1.0e-6f);
+		slog.info("main loop min period %fms", time_min*1000.0f);
+		tv_s = tv_e;
+#endif
 		frame_cnt ++;
 	}
 	slog.info("main loop exit.");
